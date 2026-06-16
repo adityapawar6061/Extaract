@@ -6,15 +6,13 @@ import re
 import requests
 from io import StringIO
 
-try:
-    API_KEY = st.secrets["docstrange"]["api_key"]
-except:
-    API_KEY = "76a50770-6832-4756-b160-20d8f5dade76"
-
 API_URL = "https://extraction-api.nanonets.com/api/v1/extract/sync"
 
 st.title("Image to CSV Table Extractor")
-st.write(f"Using key: ...{API_KEY[-6:]}")
+
+API_KEY = st.text_input("Enter your Docstrange API Key", type="password")
+if not API_KEY:
+    st.stop()
 
 uploaded_files = st.file_uploader(
     "Upload images or PDFs",
