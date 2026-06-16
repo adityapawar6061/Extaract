@@ -77,11 +77,20 @@ if uploaded_files:
                 continue
 
             result = response.json()
-            markdown_content = result.get("result", {}).get("markdown", {}).get("content", "")
+            st.write("API Status:", response.status_code)
+            
+            # Try different response structures
+            markdown_content = (
+                result.get("result", {}).get("markdown", {}).get("content") or
+                result.get("markdown", {}).get("content") or
+                result.get("content") or
+                result.get("text") or
+                ""
+            )
 
             if not markdown_content:
                 st.warning(f"No content extracted from {uploaded_file.name}")
-                st.write("Raw response:", result)
+                st.json(result)
                 continue
 
             st.text_area("Raw Markdown", markdown_content, height=150)
