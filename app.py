@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import tempfile
 import os
-import re
 import requests
 from io import StringIO
 
@@ -20,34 +19,22 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-def extract_tables_from_markdown(markdown_text):
-    """Parse markdown tables into DataFrames"""
-    tables = []
-    lines = markdown_text.strip().split('\n')
-    table_lines = []
-
-    for line in lines:
-        if '|' in line:
-            table_lines.append(line)
-        else:
-            if table_lines:
-                tables.append(table_lines)
-                table_lines = []
-    if table_lines:
-        tables.append(table_lines)
-
-    dfs = []
-    for table in tables:
-        rows = []
-        for line in table:
-            if re.match(r'^\s*\|[-| :]+\|\s*$', line):
-                continue
-            cells = [c.strip() for c in line.strip().strip('|').split('|')]
-            rows.append(cells)
-        if rows:
-            dfs.append(pd.DataFrame(rows))
-
-    return dfs
+def parse_html_tables(html_content):
+    """Parse HTML tables into DataFrames"""
+    try:
+        dfs = pd.read_html(StringIO(html_content))
+        cleaned = []
+        for df in dfs:
+            # Drop fully empty rows and columns
+            df.dropna(how='all', inplace=True)
+            df.dropna(axis=1, how='all', inplace=True)
+            df.reset_index(drop=True, inplace=True)
+            if not df.empty:
+                cleaned.append(df)
+        return cleaned
+    except Exception as e:
+        st.error(f"HTML parse error: {e}")
+        return []
 
 if uploaded_files:
     all_dfs = []
@@ -67,7 +54,7 @@ if uploaded_files:
                         API_URL,
                         headers={"Authorization": f"Bearer {API_KEY}"},
                         files={"file": (uploaded_file.name, f)},
-                        data={"output_format": "markdown"}
+                        data={"output_format": "html"}
                     )
 
             if response.status_code != 200:
@@ -75,43 +62,39 @@ if uploaded_files:
                 continue
 
             result = response.json()
-            st.write("API Status:", response.status_code)
-            
-            # Try different response structures
-            markdown_content = (
-                result.get("result", {}).get("markdown", {}).get("content") or
-                result.get("markdown", {}).get("content") or
-                result.get("content") or
-                result.get("text") or
-                ""
+
+            # Extract HTML content from response
+            html_content = (
+                result.get("result", {}).get("html", {}).get("content") or
+                result.get("html", {}).get("content") or
+                result.get("content") or ""
             )
 
-            if not markdown_content:
+            if not html_content:
                 st.warning(f"No content extracted from {uploaded_file.name}")
                 st.json(result)
                 continue
 
-            st.text_area("Raw Markdown", markdown_content, height=150)
-
-            dfs = extract_tables_from_markdown(markdown_content)
+            dfs = parse_html_tables(html_content)
 
             if not dfs:
-                # No tables found, convert all text lines to dataframe
-                lines = [l.strip() for l in markdown_content.split('\n') if l.strip()]
-                rows = [re.split(r'\s{2,}|\t', l) for l in lines]
-                dfs = [pd.DataFrame(rows)]
+                st.warning(f"No tables found in {uploaded_file.name}")
+                continue
 
             for idx, df in enumerate(dfs):
-                df.dropna(how='all', inplace=True)
-                df.reset_index(drop=True, inplace=True)
-                st.write(f"Table {idx+1}:")
+                # Use first row as header if it looks like one
+                if df.iloc[0].astype(str).str.isupper().sum() > len(df.columns) // 2:
+                    df.columns = df.iloc[0]
+                    df = df[1:].reset_index(drop=True)
+
+                st.write(f"Table {idx + 1} — {len(df)} rows")
                 st.dataframe(df)
                 all_dfs.append(df)
 
                 st.download_button(
-                    label=f"⬇ Download Table {idx+1} from {uploaded_file.name}",
-                    data=df.to_csv(index=False, header=False),
-                    file_name=f"{uploaded_file.name.rsplit('.', 1)[0]}_table{idx+1}.csv",
+                    label=f"⬇ Download Table {idx + 1}",
+                    data=df.to_csv(index=False),
+                    file_name=f"{uploaded_file.name.rsplit('.', 1)[0]}_table{idx + 1}.csv",
                     mime="text/csv",
                     key=f"dl_{uploaded_file.name}_{idx}"
                 )
@@ -128,7 +111,7 @@ if uploaded_files:
         st.dataframe(combined)
         st.download_button(
             label="⬇ Download Combined CSV",
-            data=combined.to_csv(index=False, header=False),
+            data=combined.to_csv(index=False),
             file_name="combined_output.csv",
             mime="text/csv",
             key="dl_combined"
