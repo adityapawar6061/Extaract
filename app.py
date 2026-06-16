@@ -13,6 +13,7 @@ except:
 os.environ['DOCSTRANGE_API_KEY'] = API_KEY
 
 st.title("Image to CSV Table Extractor")
+st.write(f"Using key: ...{API_KEY[-6:]}")  # shows last 6 chars only
 
 uploaded_files = st.file_uploader(
     "Upload images or PDFs",
