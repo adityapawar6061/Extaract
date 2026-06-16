@@ -6,7 +6,10 @@ import re
 from io import StringIO
 from docstrange import DocumentExtractor
 
-API_KEY = "76a50770-6832-4756-b160-20d8f5dade76"
+try:
+    API_KEY = st.secrets["docstrange"]["api_key"]
+except:
+    API_KEY = "76a50770-6832-4756-b160-20d8f5dade76"
 os.environ['DOCSTRANGE_API_KEY'] = API_KEY
 
 st.title("Image to CSV Table Extractor")
