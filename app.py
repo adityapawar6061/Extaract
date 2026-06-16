@@ -38,6 +38,45 @@ def parse_html_tables(html_content):
         return []
 
 
+def make_unique_columns(columns, reserved=()):
+    seen = {}
+    unique_columns = []
+    reserved_names = set(reserved)
+
+    for position, column in enumerate(columns, start=1):
+        if pd.isna(column):
+            base_name = f"column_{position}"
+        else:
+            base_name = str(column).strip()
+            if not base_name or base_name.lower().startswith("unnamed:"):
+                base_name = f"column_{position}"
+
+        if base_name in reserved_names:
+            base_name = f"{base_name}_extracted"
+
+        count = seen.get(base_name, 0) + 1
+        seen[base_name] = count
+        unique_columns.append(base_name if count == 1 else f"{base_name}_{count}")
+
+    return unique_columns
+
+
+def prepare_extracted_table(df, source_file, source_table):
+    df = df.copy()
+
+    if df.iloc[0].astype(str).str.isupper().sum() > len(df.columns) // 2:
+        df.columns = df.iloc[0]
+        df = df[1:].reset_index(drop=True)
+
+    df.columns = make_unique_columns(
+        df.columns,
+        reserved=("source_file", "source_table"),
+    )
+    df.insert(0, "source_file", source_file)
+    df.insert(1, "source_table", source_table)
+    return df
+
+
 def dataframe_to_excel_bytes(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -96,13 +135,8 @@ if uploaded_files:
                 continue
 
             for idx, df in enumerate(dfs):
-                if df.iloc[0].astype(str).str.isupper().sum() > len(df.columns) // 2:
-                    df.columns = df.iloc[0]
-                    df = df[1:].reset_index(drop=True)
-
                 table_source = uploaded_file.name.rsplit(".", 1)[0]
-                df.insert(0, "source_file", uploaded_file.name)
-                df.insert(1, "source_table", idx + 1)
+                df = prepare_extracted_table(df, uploaded_file.name, idx + 1)
 
                 st.write(f"Table {idx + 1} - {len(df)} rows")
                 st.dataframe(df)
